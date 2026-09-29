@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>AR Limit Portal: ทะลุมิติค้นหาลิมิต</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <!-- Three.js (3D & AR Rendering) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+  <!-- MathJax for rendering math formulas -->
+  <script>
+    MathJax = {
+      tex: {
+        inlineMath: [['$', '$'], ['\\(', '\\)']]
+      },
+      svg: {
+        fontCache: 'global'
+      }
+    };
+  </script>
+  <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600;700&family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet">
+
+  <style>
+    * {
+      touch-action: manipulation;
+      user-select: none;
+    }
+    body {
+      font-family: 'Kanit', sans-serif;
+      background-color: #030712;
+      color: #f3f4f6;
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+    }
+    .font-orbitron {
+      font-family: 'Orbitron', sans-serif;
+    }
+    /* Sci-Fi Glassmorphism HUD */
+    .hud-card {
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5), inset 0 0 15px rgba(56, 189, 248, 0.1);
+    }
+    .hud-card-accent {
+      background: rgba(30, 41, 59, 0.85);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(245, 158, 11, 0.4);
+      box-shadow: 0 0 20px rgba(245, 158, 11, 0.2);
+    }
+    .neon-glow-blue {
+      box-shadow: 0 0 15px #38bdf8, inset 0 0 10px #38bdf8;
+    }
+    .neon-text-blue {
+      text-shadow: 0 0 10px rgba(56, 189, 248, 0.8);
+    }
+    .neon-text-gold {
+      text-shadow: 0 0 10px rgba(251, 191, 36, 0.8);
+    }
+    .neon-text-green {
+      text-shadow: 0 0 10px rgba(52, 211, 153, 0.8);
+    }
+    /* Custom Slider */
+    input[type=range] {
+      -webkit-appearance: none;
+      background: rgba(30, 41, 59, 0.8);
+      border-radius: 9999px;
+      height: 8px;
+      border: 1px solid rgba(56, 189, 248, 0.4);
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      height: 24px;
+      width: 24px;
+      border-radius: 50%;
+      background: #38bdf8;
+      box-shadow: 0 0 12px #38bdf8;
+      cursor: pointer;
+      border: 2px solid #ffffff;
+    }
+    /* Camera Video Canvas Overlay */
+    #ar-video {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      z-index: 0;
+      display: none;
+    }
+    #three-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+    .pulse-animation {
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.85; transform: scale(1.02); }
+    }
+  </style>
+</head>
+<body class="relative">
+
+  <!-- WebAR Camera Video Background -->
+  <video id="ar-video" autoplay playsinline muted></video>
+
+  <!-- 3D WebGL Canvas -->
+  <div id="three-canvas"></div>
+
+  <!-- TOP HUD BAR -->
+  <div class="absolute top-0 left-0 w-full z-20 p-3 sm:p-4 flex justify-between items-center pointer-events-none">
+    
+    <!-- Title & Level Info -->
+    <div class="hud-card pointer-events-auto rounded-2xl px-4 py-2 flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-400/50 flex items-center justify-center text-cyan-400 font-orbitron text-lg font-bold">
+        <i class="fa-solid fa-cube"></i>
+      </div>
+      <div>
+        <div class="text-xs text-cyan-400 font-orbitron tracking-wider uppercase">PORTAL MISSION</div>
+        <div id="mission-title" class="text-sm sm:text-base font-bold text-white">ด่านที่ 1: ลิมิตพื้นฐาน</div>
+      </div>
+    </div>
+
+    <!-- Stats & Mode Toggles -->
+    <div class="hud-card pointer-events-auto rounded-2xl px-3 py-2 flex items-center gap-2 sm:gap-4">
+      <!-- Score -->
+      <div class="text-right px-2">
+        <div class="text-[10px] text-amber-400 font-orbitron">ENERGY SCORE</div>
+        <div id="score-text" class="text-lg font-orbitron font-bold text-amber-300 neon-text-gold">0</div>
+      </div>
+
+      <!-- AR Mode Toggle Button -->
+      <button id="ar-toggle-btn" class="bg-slate-800/90 hover:bg-cyan-600/80 border border-cyan-400/50 text-cyan-300 hover:text-white px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold transition flex items-center gap-2 shadow-lg">
+        <i class="fa-solid fa-camera-rotate text-sm"></i>
+        <span id="ar-mode-label" class="hidden sm:inline">โหมด AR</span>
+      </button>
+
+      <!-- Audio Toggle -->
+      <button id="audio-toggle-btn" class="bg-slate-800/90 hover:bg-slate-700 text-cyan-400 p-2.5 rounded-xl border border-slate-600 transition">
+        <i class="fa-solid fa-volume-high"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- BOTTOM CONTROLS & HUD PANEL -->
+  <div class="absolute bottom-0 left-0 w-full z-20 p-3 sm:p-5 flex flex-col items-center pointer-events-none gap-3">
+    
+    <!-- Target Limit Formula Card -->
+    <div class="hud-card pointer-events-auto rounded-2xl p-4 w-full max-w-xl text-center shadow-2xl relative border-t-2 border-t-cyan-400">
+      
+      <div class="text-xs font-orbitron text-cyan-400 tracking-widest uppercase mb-1 flex justify-center items-center gap-2">
+        <span class="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
+        TARGET ANOMALY DATA
+      </div>
+
+      <!-- Math Equation Display -->
+      <div id="math-formula" class="text-lg sm:text-2xl font-bold my-1 min-h-[42px] flex items-center justify-center text-white">
+        <!-- MathJax Equation rendered here -->
+      </div>
+
+      <!-- Interactive Slider X -->
+      <div class="mt-3 bg-slate-900/60 p-3 rounded-xl border border-slate-700/60">
+        <div class="flex justify-between items-center text-xs sm:text-sm mb-1">
+          <span class="text-slate-400 font-mono">เลื่อนพิกัดตำแหน่ง $x$:</span>
+          <span id="x-val-display" class="font-orbitron font-bold text-cyan-300 text-base">x = 0.00</span>
+        </div>
+        <input id="x-slider" type="range" min="-3" max="3" step="0.05" value="-1" class="w-full cursor-pointer">
+        
+        <!-- Live Readout Indicators -->
+        <div class="grid grid-cols-2 gap-2 mt-2 text-xs">
+          <div class="bg-slate-800/80 p-2 rounded-lg border border-cyan-500/30 flex justify-between items-center">
+            <span class="text-cyan-400">$\lim_{x \to a^-} f(x)$ (ซ้าย)</span>
+            <span id="left-limit-val" class="font-orbitron font-bold text-cyan-300">--</span>
+          </div>
+          <div class="bg-slate-800/80 p-2 rounded-lg border border-purple-500/30 flex justify-between items-center">
+            <span class="text-purple-400">$\lim_{x \to a^+} f(x)$ (ขวา)</span>
+            <span id="right-limit-val" class="font-orbitron font-bold text-purple-300">--</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Portal Unlock Keypad / Answer Choices -->
+      <div class="mt-3">
+        <div class="text-xs text-amber-300 font-semibold mb-2 flex items-center justify-center gap-1">
+          <i class="fa-solid fa-key text-amber-400"></i>
+          เลือกค่าของลิมิต $\lim_{x \to a} f(x)$ เพื่อเปิดประตูมิติ:
+        </div>
+        <div id="answers-container" class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <!-- Answer buttons injected via JS -->
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Hint / Guidance Footer -->
+    <div class="hud-card pointer-events-auto rounded-xl px-4 py-1.5 text-[11px] text-slate-300 flex items-center gap-2">
+      <i class="fa-solid fa-hand-pointer text-cyan-400 animate-bounce"></i>
+      <span>ใช้หมุน/ซูมดูรูปทรง 3 มิติ และหมุนดูพิกัดรอบโต๊ะเรียนได้ 360°</span>
+    </div>
+  </div>
+
+  <!-- LEVEL COMPLETE MODAL -->
+  <div id="modal-overlay" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+    <div class="hud-card-accent rounded-3xl p-6 sm:p-8 max-w-md w-full text-center relative border-2 border-amber-400/60 shadow-2xl pulse-animation">
+      
+      <div class="w-20 h-20 bg-amber-500/20 rounded-full border-2 border-amber-400 flex items-center justify-center mx-auto mb-4 text-amber-300 text-3xl">
+        <i class="fa-solid fa-door-open"></i>
+      </div>
+
+      <h2 id="modal-title" class="text-2xl font-orbitron font-bold text-amber-300 neon-text-gold mb-2">PORTAL UNLOCKED!</h2>
+      <p id="modal-desc" class="text-sm text-slate-200 mb-4 leading-relaxed">
+        ยอดเยี่ยมมาก! คุณคำนวณค่าลิมิตและส่งพลังงานปลดล็อกประตูมิติสำเร็จ
+      </p>
+
+      <!-- Explanation Box -->
+      <div id="modal-explanation" class="bg-slate-900/80 p-4 rounded-2xl border border-amber-500/30 text-xs text-left text-slate-300 mb-6 leading-relaxed">
+        <!-- Detailed Math Explanation -->
+      </div>
+
+      <button id="modal-next-btn" class="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-orbitron font-bold py-3.5 px-6 rounded-2xl shadow-lg transition transform active:scale-95 text-base flex items-center justify-center gap-2">
+        <span>ลุยต่อด่านถัดไป</span>
+        <i class="fa-solid fa-arrow-right"></i>
+      </button>
+    </div>
+  </div>
+
+  <script>
+    // Web Audio API Synthesizer (No external audio asset dependencies)
+    class SoundFX {
+      constructor() {
+        this.ctx = null;
+        this.enabled = true;
+      }
+      init() {
+        if (!this.ctx) {
+          this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+      }
+      playBeep(freq = 440, type = 'sine', duration = 0.1) {
+        if (!this.enabled) return;
+        this.init();
+        try {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = type;
+          osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+          gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start();
+          osc.stop(this.ctx.currentTime + duration);
+        } catch (e) {}
+      }
+      playSuccess() {
+        if (!this.enabled) return;
+        this.playBeep(523.25, 'triangle', 0.15); // C5
+        setTimeout(() => this.playBeep(659.25, 'triangle', 0.15), 100); // E5
+        setTimeout(() => this.playBeep(783.99, 'triangle', 0.3), 200); // G5
+      }
+      playError() {
+        if (!this.enabled) return;
+        this.playBeep(220, 'sawtooth', 0.2); // A3
+        setTimeout(() => this.playBeep(185, 'sawtooth', 0.3), 150); // F#3
+      }
+      playPortal() {
+        if (!this.enabled) return;
+        this.init();
+        try {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(200, this.ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(800, this.ctx.currentTime + 0.6);
+          gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+          gain.gain.linearRampToValueAtTime(0.001, this.ctx.currentTime + 0.6);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start();
+          osc.stop(this.ctx.currentTime + 0.6);
+        } catch (e) {}
+      }
+    }
+    const sound = new SoundFX();
+
+    const GAME_LEVELS = [
+      {
+        id: 1,
+        title: "ด่านที่ 1: ลิมิตฟังก์ชันต่อเนื่องพื้นฐาน",
+        targetA: 2,
+        formulaTex: "$$f(x) = x^2 - 1 \\quad \\text{หาค่า} \\quad \\lim_{x \\to 2} f(x)$$",
+        fn: (x) => Math.pow(x, 2) - 1,
+        type: "continuous",
+        correctAnswer: "3",
+        options: ["3", "1", "4", "หาค่าไม่ได้ (DNE)"],
+        explanation: "<b>การวิเคราะห์:</b><br>• $\\lim_{x \\to 2^-} (x^2 - 1) = 3$<br>• $\\lim_{x \\to 2^+} (x^2 - 1) = 3$<br>เนื่องจากลิมิตทางซ้าย = ลิมิตทางขวา ดังนั้น $\\lim_{x \\to 2} f(x) = 3$"
+      },
+      {
+        id: 2,
+        title: "ด่านที่ 2: พิจารณากราฟจุดโปร่ง (Hole)",
+        targetA: 1,
+        formulaTex: "$$f(x) = \\begin{cases} 2x + 1 & ; x \\neq 1 \\\\ 1 & ; x = 1 \\end{cases} \\quad \\text{หาค่า} \\quad \\lim_{x \\to 1} f(x)$$",
+        fn: (x) => (Math.abs(x - 1) < 0.001) ? 1 : (2 * x + 1),
+        holePoint: { x: 1, y: 3 },
+        solidPoint: { x: 1, y: 1 },
+        type: "hole",
+        correctAnswer: "3",
+        options: ["1", "3", "2", "หาค่าไม่ได้ (DNE)"],
+        explanation: "<b>การวิเคราะห์:</b><br>แม้ว่าค่าของฟังก์ชัน $f(1) = 1$ (จุดทึบ)<br>แต่แนวโน้มของกราฟทั้งทางซ้ายและขวาวิ่งเข้าหาความสูง $y = 3$ (จุดโปร่ง)<br>ดังนั้น $\\lim_{x \\to 1} f(x) = 3$"
+      },
+      {
+        id: 3,
+        title: "ด่านที่ 3: กราฟกระโดดขาดช่วง (Jump Discontinuity)",
+        targetA: 0,
+        formulaTex: "$$f(x) = \\begin{cases} x + 2 & ; x < 0 \\\\ -x - 1 & ; x \\ge 0 \\end{cases} \\quad \\text{หาค่า} \\quad \\lim_{x \\to 0} f(x)$$",
+        fn: (x) => (x < 0) ? (x + 2) : (-x - 1),
+        type: "jump",
+        jumpLeft: { x: 0, y: 2 },
+        jumpRight: { x: 0, y: -1 },
+        correctAnswer: "หาค่าไม่ได้ (DNE)",
+        options: ["2", "-1", "1", "หาค่าไม่ได้ (DNE)"],
+        explanation: "<b>การวิเคราะห์:</b><br>• ลิมิตทางซ้าย $\\lim_{x \\to 0^-} f(x) = 2$<br>• ลิมิตทางขวา $\\lim_{x \\to 0^+} f(x) = -1$<br>เนื่องจากลิมิตซ้าย $\\neq$ ลิมิตขวา ดังนั้น $\\lim_{x \\to 0} f(x)$ <b>หาค่าไม่ได้ (DNE)</b>"
+      },
+      {
+        id: 4,
+        title: "ด่านที่ 4: พีชคณิตรูปแบบไม่กำหนด 0/0",
+        targetA: 3,
+        formulaTex: "$$f(x) = \\frac{x^2 - 9}{x - 3} \\quad \\text{หาค่า} \\quad \\lim_{x \\to 3} f(x)$$",
+        fn: (x) => (Math.abs(x - 3) < 0.001) ? 6 : ((x * x - 9) / (x - 3)),
+        holePoint: { x: 3, y: 6 },
+        type: "hole",
+        correctAnswer: "6",
+        options: ["0", "3", "6", "หาค่าไม่ได้ (DNE)"],
+        explanation: "<b>การวิเคราะห์:</b><br>เมื่อแทน $x = 3$ ตรงๆ จะได้ $\\frac{0}{0}$<br>แยกตัวประกอบ: $\\frac{(x-3)(x+3)}{x-3} = x + 3$<br>ดังนั้น $\\lim_{x \\to 3} (x + 3) = 3 + 3 = 6$"
+      }
+    ];
+
+    let currentLevelIdx = 0;
+    let score = 0;
+    let isARMode = false;
+    let cameraStream = null;
+
+    // Three.js Scene Variables
+    let scene, camera, renderer, controls;
+    let graphLineGroup, targetMarker, leftTracer, rightTracer, portalMesh, portalParticles;
+
+    function init3DEngine() {
+      const container = document.getElementById('three-canvas');
+
+      // Scene
+      scene = new THREE.Scene();
+      
+      // Camera
+      camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+      camera.position.set(0, 4, 8);
+
+      // Renderer
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      container.appendChild(renderer.domElement);
+
+      // Orbit Controls
+      controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.05;
+      controls.maxPolarAngle = Math.PI / 2 + 0.1; // Don't go below ground
+
+      // Lighting
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+      scene.add(ambientLight);
+
+      const dirLight = new THREE.DirectionalLight(0x38bdf8, 1.5);
+      dirLight.position.set(5, 10, 7);
+      scene.add(dirLight);
+
+      const pointLight = new THREE.PointLight(0xf59e0b, 2, 20);
+      pointLight.position.set(0, 3, 0);
+      scene.add(pointLight);
+
+      // Cyberpunk Grid Floor
+      const gridHelper = new THREE.GridHelper(20, 20, 0x38bdf8, 0x1e293b);
+      gridHelper.position.y = -2;
+      scene.add(gridHelper);
+
+      // Axes Helper
+      create3DAxes();
+
+      // Portal Ring Construction
+      create3DPortal();
+
+      // Tracer Orbs
+      createTracerOrbs();
+
+      // Window Resize Listener
+      window.addEventListener('resize', onWindowResize);
+
+      // Start Animation Loop
+      animate();
+    }
+
+    function create3DAxes() {
+      const axesGroup = new THREE.Group();
+
+      // X Axis (Cyan)
+      const xMat = new THREE.LineBasicMaterial({ color: 0x38bdf8, linewidth: 2 });
+      const xGeo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(-6, -2, 0), new THREE.Vector3(6, -2, 0)
+      ]);
+      axesGroup.add(new THREE.Line(xGeo, xMat));
+
+      // Y Axis (Purple)
+      const yMat = new THREE.LineBasicMaterial({ color: 0xc084fc, linewidth: 2 });
+      const yGeo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, -2, 0), new THREE.Vector3(0, 6, 0)
+      ]);
+      axesGroup.add(new THREE.Line(yGeo, yMat));
+
+      scene.add(axesGroup);
+    }
+
+    function create3DPortal() {
+      const portalGroup = new THREE.Group();
+      
+      // Torus Ring
+      const ringGeo = new THREE.TorusGeometry(1.8, 0.08, 16, 100);
+      const ringMat = new THREE.MeshStandardMaterial({
+        color: 0xf59e0b,
+        emissive: 0xd97706,
+        metalness: 0.8,
+        roughness: 0.2
+      });
+      portalMesh = new THREE.Mesh(ringGeo, ringMat);
+      portalGroup.add(portalMesh);
+
+      // Portal Vortex Particles
+      const particleGeo = new THREE.BufferGeometry();
+      const count = 150;
+      const positions = new Float32Array(count * 3);
+      for (let i = 0; i < count * 3; i += 3) {
+        const r = Math.random() * 1.6;
+        const theta = Math.random() * Math.PI * 2;
+        positions[i] = r * Math.cos(theta);
+        positions[i + 1] = r * Math.sin(theta);
+        positions[i + 2] = (Math.random() - 0.5) * 0.4;
+      }
+      particleGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      const particleMat = new THREE.PointsMaterial({
+        color: 0xfbbf24,
+        size: 0.06,
+        transparent: true,
+        opacity: 0.8
+      });
+      portalParticles = new THREE.Points(particleGeo, particleMat);
+      portalGroup.add(portalParticles);
+
+      portalGroup.position.set(0, 2, -1);
+      scene.add(portalGroup);
+    }
+
+    function createTracerOrbs() {
+      // Left Tracer (Cyan)
+      const leftGeo = new THREE.SphereGeometry(0.15, 16, 16);
+      const leftMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0284c7 });
+      leftTracer = new THREE.Mesh(leftGeo, leftMat);
+      scene.add(leftTracer);
+
+      // Right Tracer (Purple)
+      const rightGeo = new THREE.SphereGeometry(0.15, 16, 16);
+      const rightMat = new THREE.MeshStandardMaterial({ color: 0xc084fc, emissive: 0x7e22ce });
+      rightTracer = new THREE.Mesh(rightGeo, rightMat);
+      scene.add(rightTracer);
+    }
+
+    function buildLevelGraph(level) {
+      if (graphLineGroup) scene.remove(graphLineGroup);
+      graphLineGroup = new THREE.Group();
+
+      const points = [];
+      const step = 0.05;
+
+      if (level.type === 'jump') {
+        // Left Branch (x < targetA)
+        const leftPoints = [];
+        for (let x = -4; x < level.targetA; x += step) {
+          const y = level.fn(x);
+          leftPoints.push(new THREE.Vector3(x, y - 2, 0));
+        }
+        addTubeToGroup(leftPoints, 0x38bdf8);
+
+        // Right Branch (x >= targetA)
+        const rightPoints = [];
+        for (let x = level.targetA + 0.05; x <= 4; x += step) {
+          const y = level.fn(x);
+          rightPoints.push(new THREE.Vector3(x, y - 2, 0));
+        }
+        addTubeToGroup(rightPoints, 0xc084fc);
+
+        // Jump Hole & Solid Markers
+        addHoleMarker(level.jumpLeft.x, level.jumpLeft.y - 2, 0x38bdf8);
+        addSolidMarker(level.jumpRight.x, level.jumpRight.y - 2, 0xc084fc);
+
+      } else if (level.type === 'hole') {
+        // Continuous curve with a hole
+        for (let x = -4; x <= 4; x += step) {
+          if (Math.abs(x - level.targetA) < 0.08) continue;
+          const y = level.fn(x);
+          points.push(new THREE.Vector3(x, y - 2, 0));
+        }
+        addTubeToGroup(points, 0x38bdf8);
+
+        // Add Hole Marker
+        addHoleMarker(level.holePoint.x, level.holePoint.y - 2, 0xf59e0b);
+
+        // Add Solid Marker if defined
+        if (level.solidPoint) {
+          addSolidMarker(level.solidPoint.x, level.solidPoint.y - 2, 0x10b981);
+        }
+
+      } else {
+        // Smooth continuous curve
+        for (let x = -4; x <= 4; x += step) {
+          const y = level.fn(x);
+          points.push(new THREE.Vector3(x, y - 2, 0));
+        }
+        addTubeToGroup(points, 0x38bdf8);
+      }
+
+      scene.add(graphLineGroup);
+    }
+
+    function addTubeToGroup(pointsArray, colorHex) {
+      if (pointsArray.length < 2) return;
+      const curve = new THREE.CatmullRomCurve3(pointsArray);
+      const tubeGeo = new THREE.TubeGeometry(curve, 64, 0.06, 8, false);
+      const tubeMat = new THREE.MeshStandardMaterial({
+        color: colorHex,
+        roughness: 0.3,
+        metalness: 0.5
+      });
+      const tubeMesh = new THREE.Mesh(tubeGeo, tubeMat);
+      graphLineGroup.add(tubeMesh);
+    }
+
+    function addHoleMarker(x, y, colorHex) {
+      const holeGeo = new THREE.RingGeometry(0.12, 0.2, 32);
+      const holeMat = new THREE.MeshBasicMaterial({ color: colorHex, side: THREE.DoubleSide });
+      const holeMesh = new THREE.Mesh(holeGeo, holeMat);
+      holeMesh.position.set(x, y, 0.01);
+      graphLineGroup.add(holeMesh);
+    }
+
+    function addSolidMarker(x, y, colorHex) {
+      const sphereGeo = new THREE.SphereGeometry(0.16, 16, 16);
+      const sphereMat = new THREE.MeshStandardMaterial({ color: colorHex, emissive: colorHex, emissiveIntensity: 0.5 });
+      const sphereMesh = new THREE.Mesh(sphereGeo, sphereMat);
+      sphereMesh.position.set(x, y, 0.01);
+      graphLineGroup.add(sphereMesh);
+    }
+
+    function updateSliderLogic() {
+      const slider = document.getElementById('x-slider');
+      const xVal = parseFloat(slider.value);
+      const level = GAME_LEVELS[currentLevelIdx];
+
+      document.getElementById('x-val-display').innerText = `x = ${xVal.toFixed(2)}`;
+
+      // Calculate Left Limit (x -> a-) and Right Limit (x -> a+)
+      const delta = 0.01;
+      const yLeft = level.fn(level.targetA - delta);
+      const yRight = level.fn(level.targetA + delta);
+
+      document.getElementById('left-limit-val').innerText = yLeft.toFixed(2);
+      document.getElementById('right-limit-val').innerText = yRight.toFixed(2);
+
+      // Position Tracer Orbs in 3D
+      const currentY = level.fn(xVal);
+      if (xVal < level.targetA) {
+        leftTracer.position.set(xVal, currentY - 2, 0);
+        rightTracer.position.set(level.targetA + 0.8, yRight - 2, 0);
+      } else {
+        leftTracer.position.set(level.targetA - 0.8, yLeft - 2, 0);
+        rightTracer.position.set(xVal, currentY - 2, 0);
+      }
+
+      sound.playBeep(200 + (xVal + 3) * 80, 'sine', 0.03);
+    }
+
+    async function toggleARMode() {
+      const videoEl = document.getElementById('ar-video');
+      const label = document.getElementById('ar-mode-label');
+
+      if (!isARMode) {
+        try {
+          cameraStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'environment' }
+          });
+          videoEl.srcObject = cameraStream;
+          videoEl.style.display = 'block';
+          label.innerText = 'ปิดโหมด AR';
+          isARMode = true;
+          sound.playSuccess();
+        } catch (err) {
+          alert('ไม่สามารถเปิดกล้องได้ โปรดอนุญาตสิทธิ์เข้าถึงกล้องสำหรับเล่นโหมด AR');
+        }
+      } else {
+        if (cameraStream) {
+          cameraStream.getTracks().forEach(track => track.stop());
+        }
+        videoEl.style.display = 'none';
+        label.innerText = 'โหมด AR';
+        isARMode = false;
+      }
+    }
+
+    function loadLevel(idx) {
+      currentLevelIdx = idx;
+      const level = GAME_LEVELS[idx];
+
+      document.getElementById('mission-title').innerText = level.title;
+      document.getElementById('math-formula').innerHTML = level.formulaTex;
+
+      // Reset Slider
+      const slider = document.getElementById('x-slider');
+      slider.min = (level.targetA - 2.5).toFixed(1);
+      slider.max = (level.targetA + 2.5).toFixed(1);
+      slider.value = (level.targetA - 1.5).toFixed(1);
+
+      // Build Answer Buttons
+      const answersContainer = document.getElementById('answers-container');
+      answersContainer.innerHTML = '';
+      level.options.forEach(opt => {
+        const btn = document.createElement('button');
+        btn.className = "bg-slate-800/90 hover:bg-cyan-600/80 border border-cyan-500/40 hover:border-cyan-300 text-white font-bold py-2.5 px-3 rounded-xl transition transform active:scale-95 text-sm sm:text-base shadow-md";
+        btn.innerText = opt;
+        btn.onclick = () => checkAnswer(opt);
+        answersContainer.appendChild(btn);
+      });
+
+      // Re-render MathJax
+      if (window.MathJax) {
+        MathJax.typesetPromise();
+      }
+
+      // Build 3D Graph
+      buildLevelGraph(level);
+      updateSliderLogic();
+    }
+
+    function checkAnswer(selectedOpt) {
+      const level = GAME_LEVELS[currentLevelIdx];
+      if (selectedOpt === level.correctAnswer) {
+        sound.playSuccess();
+        sound.playPortal();
+        score += 100;
+        document.getElementById('score-text').innerText = score;
+
+        // Show Modal
+        document.getElementById('modal-title').innerText = "PORTAL UNLOCKED!";
+        document.getElementById('modal-desc').innerText = "ยอดเยี่ยมมาก! คุณคำนวณค่าลิมิตและเปิดประตูมิติสำเร็จ";
+        document.getElementById('modal-explanation').innerHTML = level.explanation;
+        document.getElementById('modal-overlay').classList.remove('hidden');
+
+        // Re-render MathJax in Modal
+        if (window.MathJax) {
+          MathJax.typesetPromise();
+        }
+      } else {
+        sound.playError();
+        alert('ยังไม่ถูกต้อง! ลองสังเกตพฤติกรรมกราฟเมื่อ x วิ่งเข้าใกล้จุด a จากทั้งสองฝั่งอีกครั้ง');
+      }
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      // Rotate Portal Ring & Particles
+      if (portalMesh) portalMesh.rotation.z += 0.01;
+      if (portalParticles) portalParticles.rotation.z -= 0.005;
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    function onWindowResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    window.onload = () => {
+      init3DEngine();
+
+      // UI Listeners
+      document.getElementById('x-slider').addEventListener('input', updateSliderLogic);
+      document.getElementById('ar-toggle-btn').addEventListener('click', toggleARMode);
+
+      document.getElementById('audio-toggle-btn').addEventListener('click', () => {
+        sound.enabled = !sound.enabled;
+        const icon = document.getElementById('audio-toggle-btn').querySelector('i');
+        icon.className = sound.enabled ? "fa-solid fa-volume-high" : "fa-solid fa-volume-xmark text-slate-500";
+      });
+
+      document.getElementById('modal-next-btn').addEventListener('click', () => {
+        document.getElementById('modal-overlay').classList.add('hidden');
+        if (currentLevelIdx + 1 < GAME_LEVELS.length) {
+          loadLevel(currentLevelIdx + 1);
+        } else {
+          alert('🎉 ยินดีด้วย! คุณผ่านด่านการสำรวจประตูมิติลิมิตทั้งหมดเรียบร้อยแล้ว!');
+          loadLevel(0);
+        }
+      });
+
+      // Load First Level
+      loadLevel(0);
+    };
+  </script>
+</body>
+</html>
